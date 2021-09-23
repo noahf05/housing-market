@@ -1,0 +1,300 @@
+---
+title: "code_4165188"
+author: "Noah Farrell"
+date: "4/13/2021"
+output: word_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Make our sets
+```{r}
+set.seed(1)
+df.train <- train1
+df.test <- test1
+
+# I had to rename the original test and train sets to "train1" and "train2" because I messed
+# up my logic early on.
+
+index <- sample(1:nrow(df.train), 1260)
+train <- df.train[index,]
+test <- df.train[-index,]
+```
+
+```{r}
+head(df.train)
+```
+
+# -------------------------------------------------------------------------------------------
+
+Baseline
+
+```{r}
+avgPrice <- mean(df.train$price)
+mean((avgPrice - test$price)^2)
+```
+
+Our baseline MSE is 136,769,209,846.
+
+#-------------------------------------------------------------------------------------------
+
+linear Regression
+
+```{r}
+model1 <- lm(price ~ numstories + yearbuilt + basement + totalrooms + bedrooms + bathrooms + fireplaces + sqft + lotarea + AvgIncome, data = df.train)
+sm1 <- summary(model1)
+sm1
+```
+
+```{r}
+mean(sm1$residuals^2)
+```
+
+Our MSE for linear regression with every quanatative variable is 10,235,782,485.
+
+```{r}
+model2 <- lm(price ~ bedrooms + bathrooms + fireplaces + sqft + lotarea, data = df.train)
+sm2 <- summary(model2)
+sm2
+```
+
+```{r}
+mean(sm2$residuals^2)
+```
+
+Our MSE for linear regression with only the statistically significant variables is 10,442,703,894.
+
+#-------------------------------------------------------------------------------------------
+
+Best Subset selection
+```{r}
+library(leaps)
+regfit.full = regsubsets(price ~ numstories + yearbuilt + basement + totalrooms + bedrooms + bathrooms + fireplaces + sqft + lotarea + AvgIncome, df.train)
+summary(regfit.full)
+```
+
+```{r}
+reg.summary=summary(regfit.full)
+reg.summary$rsq
+```
+
+R^2 is very high. Starts at .833 when one variable is in the model and jumps to .88 when all 10 are in.
+
+```{r}
+par(mfrow=c(2,2))
+plot(reg.summary$rss ,xlab="Number of Variables ",ylab="RSS",
+type="l")
+plot(reg.summary$adjr2 ,xlab="Number of Variables ",
+ylab="Adjusted RSq",type="l")
+```
+
+```{r}
+which.max(reg.summary$adjr2)
+```
+
+```{r}
+which.min(reg.summary$cp )
+which.min(reg.summary$bic )
+```
+
+
+```{r}
+plot(reg.summary$cp ,xlab="Number of Variables ",ylab="Cp", type= 'l')
+points(8,reg.summary$cp [8],col="red",cex=2,pch=20)
+plot(reg.summary$bic ,xlab="Number of Variables ",ylab="BIC",type='l')
+points(6,reg.summary$bic [6],col="red",cex=2,pch=20)
+```
+
+```{r}
+coef(regfit.full ,6)
+```
+
+BIC is minimized in a 6 variable modle including yearbuilt, bedrooms, bathrooms, fireplaces, sqft, and lotarea
+
+```{r}
+coef(regfit.full ,8)
+```
+
+Cp is minimized in an 8 variable modle including numstories, basement, bedrooms, bathrooms, fireplaces, sqft, lotarea, and AvgIncome
+
+Forward and Backward Stepwise Selection
+```{r}
+regfit.fwd=regsubsets (price ~ numstories + yearbuilt + basement + totalrooms + bedrooms + bathrooms + fireplaces + sqft + lotarea + AvgIncome,data=df.train ,nvmax=10, method ="forward")
+summary(regfit.fwd)
+```
+
+```{r}
+regfit.bwd=regsubsets (price ~ numstories + yearbuilt + basement + totalrooms + bedrooms + bathrooms + fireplaces + sqft + lotarea + AvgIncome,data=df.train ,nvmax=10,method ="backward")
+summary(regfit.bwd)
+```
+
+First descrepincy between best, forward, and backwards at 6 variables.
+
+```{r}
+coef(regfit.full ,6)
+coef(regfit.fwd ,6)
+coef(regfit.bwd ,6)
+```
+
+Best subset selection and forward subset selection are the same, it is backwards that differs.
+
+#-------------------------------------------------------------------------------------------
+
+Ridge Regression
+
+```{r}
+library(glmnet)
+set.seed(1)
+x=model.matrix(price ~ numstories + yearbuilt + basement + totalrooms + bedrooms + bathrooms +  sqft + lotarea + AvgIncome, data = df.train)
+y = df.train$price
+grid = 10^seq(10, -2, length = 100)
+cvridge <- cv.glmnet(x,y,alpha = 0, lamda = grid)
+plot(cvridge)
+lambdamin <- cvridge$lambda.min
+ridge = glmnet(x,y, alpha = 0, lamda = lambda.min)
+ridge
+plot(ridge)
+
+```
+
+```{r}
+testRidge <- model.matrix(price ~ numstories + yearbuilt + basement + totalrooms + bedrooms + bathrooms +  sqft + lotarea + AvgIncome, data = test)
+predRidge <- predict(ridge, s = lambdamin, newx = testRidge)
+mseRidge = mean((test$price - predRidge)^2)
+mseRidge
+```
+
+Our MSE for Ridge Regression is 28,902,218,628.
+
+#-------------------------------------------------------------------------------------------
+
+lasso regression
+```{r}
+library(glmnet)
+set.seed(1)
+x2=model.matrix(price ~ numstories + yearbuilt + basement + totalrooms + bedrooms + bathrooms +  sqft + lotarea + AvgIncome, data = df.train)
+y2 = df.train$price
+grid = 10^seq(10, -2, length = 100)
+cvlasso <- cv.glmnet(x2,y2,alpha = 1, lamda = grid)
+plot(cvlasso)
+lambdamin <- cvlasso$lambda.min
+lasso = glmnet(x2,y2, alpha = 1, lamda = lambda.min)
+lasso
+plot(lasso)
+```
+
+```{r}
+testLasso <- model.matrix(price ~ numstories + yearbuilt + basement + totalrooms + bedrooms + bathrooms +  sqft + lotarea + AvgIncome, data = test)
+predLasso <- predict(lasso, s = lambdamin, newx = testLasso)
+mseLasso = mean((test$price - predLasso)^2)
+mseLasso
+```
+
+Our MSE for Lasso regression is 28,577,753,493.
+
+#-------------------------------------------------------------------------------------------
+
+Tree
+```{r}
+library(tree)
+library(ISLR)
+library(randomForest)
+library(gbm)
+tree = tree(price ~ numstories + yearbuilt + basement + totalrooms + bedrooms + bathrooms + fireplaces + sqft + lotarea + AvgIncome, df.train)
+plot(tree)
+text(tree, pretty = 0)
+```
+
+```{r}
+mean((predict(tree, test) - test$price)^2)
+```
+
+MSE is 48,287,152,980. The model only seems to take sqft and number of bathrooms into account.
+
+```{r}
+set.seed(10)
+cv.treeModel = cv.tree(tree, FUN = prune.tree)
+plot(cv.treeModel)
+```
+
+```{r}
+bestsize <- cv.treeModel$size[which.min(cv.treeModel$dev)]
+
+pruned <- prune.tree(tree, best = bestsize)
+mean((predict(pruned, test) - test$price)^2)
+```
+
+The MSE after pruning is 55,148,272,495. 
+
+#-------------------------------------------------------------------------------------------
+
+Bagging
+```{r}
+set.seed(2)
+bag <- randomForest(price ~ numstories + yearbuilt + basement + totalrooms + bedrooms + bathrooms  + sqft + lotarea + AvgIncome, data = df.train, mtry = 9, importance = T)
+importance(bag)
+varImpPlot(bag)
+```
+
+```{r}
+bagmse <- mean((predict(bag, test) - test$price)^2)
+bagmse
+```
+
+Our MSE for bagging is 4,332,595,926. The most important variable determained by the importance function is sqft.
+
+#-------------------------------------------------------------------------------------------
+
+Random Forest
+```{r}
+set.seed(2)
+library(randomForest)
+rf <- randomForest(price ~ numstories + yearbuilt + basement + totalrooms + bedrooms + bathrooms  + sqft + lotarea + AvgIncome, data = df.train, importance = T)
+importance(rf)
+varImpPlot(rf)
+```
+
+```{r}
+rfmse <- mean((predict(rf, test) - test$price)^2)
+rfmse
+```
+
+Our MSE for random forest is 4,121,580,753. The most important variable determained by the importance function is sqft and bathrooms.
+
+#-------------------------------------------------------------------------------------------
+
+Boosting
+```{r}
+library(gbm)
+lambda <- c(.001, .01, .1, .5, .9)
+testmses <- rep(NA, length(lambda))
+trainmses <- rep(NA, length(lambda))
+for(i in 1:length(testmses)){
+        boost = gbm(price ~ numstories + yearbuilt + basement + totalrooms + bedrooms + bathrooms + fireplaces + sqft + lotarea + AvgIncome, data = df.train, distribution = "gaussian", n.trees = 1000, shrinkage = lambda[i])
+        testmses[i] <- mean( (predict(boost, test) - test$price) ^2)
+        trainmses[i] <- mean( (predict(boost, df.train) - df.train$price) ^2)
+}
+```
+
+```{r}
+plot(lambda, trainmses, type = "b")
+```
+
+```{r}
+data.frame(lambda, testmses, trainmses)
+```
+
+```{r}
+plot(lambda, testmses, type = "b")
+```
+
+Both train and test MSE's decrease as lambda increases. When lambda is .9, We get a test MSE of 6,431,849,461.
+
+```{r}
+bestboost <- gbm(price ~numstories + yearbuilt + basement + totalrooms + bedrooms + bathrooms + fireplaces + sqft + lotarea + AvgIncome, data = train, distribution = "gaussian", n.trees = 1000, shrinkage = .1)
+summary(bestboost)
+```
+
+Sqft and bathrooms are the most important variables according to boosting.
